@@ -1,0 +1,66 @@
+-- Tabela dim_products z nazwami kategorii po angielsku
+SELECT
+p.product_id,
+ct.product_category_name_english
+FROM products p
+LEFT JOIN category_translation ct
+ON p.product_category_name = ct.product_category_name
+
+-- Tabela dim_customers
+SELECT
+customer_id,
+customer_city,
+customer_state
+FROM customers
+-- Tabela dim_payments (ze względu na powtarzające się order_id (płatności w ratach) payment_value zostało zsumowane dla każdego order_id
+SELECT
+order_id,
+SUM(payment_value)
+FROM payments
+GROUP BY order_id
+
+-- Tabela dim_sellers
+SELECT
+seller_id,
+seller_city,
+seller_state
+FROM sellers
+
+-- Sprawdzenie zakresu dat zamówień
+SELECT
+MIN(order_purchase_timestamp),
+MAX(order_purchase_timestamp)
+FROM orders
+
+-- Tabela fact_orders dla zamówień, których status to 'delivered', podana jest data dostarczenia zamówienia (żeby wyliczyć różnicę między datą przewidywaną a rzeczywistą) i datach ograniczonych do pełnych miesięcy
+-- Żeby zbudować schemat gwiazdy, połączono tabelę orders i order_items.
+SELECT *
+FROM orders o
+JOIN order_items oi
+ON o.order_id = oi.order_id
+WHERE o.order_status = "delivered" AND o.order_delivered_customer_date IS NOT NULL
+AND o.order_purchase_timestamp BETWEEN '2016-10-01' AND '2018-09-30'
+
+-- Sprawdzenie, czy każde zamówienie ma tylko jedną recenzję, żeby model gwiazdy działał poprawnie
+SELECT
+order_id,
+COUNT(*) AS order_id
+FROM reviews
+GROUP BY order_id
+
+-- Ze względu na to, że niektóre zamówienia miały więcej niż jedną recenzję, do analizy wybrano tylko najnowszą recenzję, tak by pojawiały się jedynie unikalne order_id, by schemat gwiazdy działał poprawnie
+WITH ranked_reviews AS
+(SELECT
+order_id,
+review_id,
+review_score,
+review_creation_date,
+ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY review_creation_date DESC) AS rn
+FROM reviews)
+SELECT
+order_id,
+review_id,
+review_score,
+review_creation_date
+FROM ranked_reviews
+WHERE rn = 1
